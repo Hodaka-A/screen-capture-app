@@ -1,103 +1,157 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useRef, useState } from "react";
+import { useHeartRateStream } from "@/hooks/useHeartRateStream";
+import { useScreenRecorder } from "@/hooks/useScreenRecorder";
+import { HeartOverlay } from "@/components/HeartOverlay";
+import { downloadJson, downloadWebM, syncHeartRates } from "@/lib/sync";
+
+const CANDIDATE_DEVICES = [
+  // Flask 側の print を見て名前が分かっている想定（例）
+  "Polar Verity Sense",
+  // 必要に応じて追記 or デバイス一覧 API を拡張する
+];
+
+export default function Page() {
+  const {
+    connected,
+    latest,
+    events,
+    drain,
+    refreshDevices,
+    subscribe,
+  } = useHeartRateStream();
+
+  const {
+    start,
+    stop,
+    recording,
+    chunks,
+    startedAt,
+  } = useScreenRecorder();
+
+  const [selectedDevice, setSelectedDevice] = useState(CANDIDATE_DEVICES[0]);
+  const [log, setLog] = useState<string[]>([]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleRefresh = async () => {
+    await refreshDevices();
+    setLog((l) => ["デバイス探索リクエストを送信しました（一覧はSocketで通知）", ...l]);
+  };
+
+  const handleSubscribe = async () => {
+    if (!selectedDevice) return;
+    await subscribe(selectedDevice);
+    setLog((l) => [`${selectedDevice} の購読を開始`, ...l]);
+  };
+
+  const handleStart = async () => {
+    await start(30);
+    setLog((l) => ["録画を開始しました", ...l]);
+  };
+
+  const handleStop = async () => {
+    await stop();
+    setLog((l) => ["録画を停止しました", ...l]);
+
+    // 録画期間の HR を相対時刻に整形し、JSON 保存
+    if (startedAt != null) {
+      const hrEvents = drain();
+      const synced = syncHeartRates(startedAt, hrEvents);
+      downloadJson(
+        { device: selectedDevice, startedAt, hr: synced },
+        `hr_${new Date().toISOString().replace(/[:.]/g, "-")}.json`
+      );
+      // 動画保存
+      downloadWebM(chunks.map((c) => c.blob), `capture_${Date.now()}.webm`);
+    }
+  };
+
+  const handlePreview = () => {
+    // 簡易プレビュー（録画中に映像を表示したい場合は getDisplayMedia の stream を直接 <video> に紐付ける実装に変更）
+    const blob = new Blob(chunks.map((c) => c.blob), { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    if (videoRef.current) {
+      videoRef.current.src = url;
+      videoRef.current.play();
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main className="max-w-4xl p-6">
+      <h1 className="mb-4 text-2xl font-semibold">Screen × Heart Rate Sync (Next.js)</h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      <div className="mb-4 rounded-xl border p-4">
+        <div className="mb-2 text-sm opacity-70">
+          Socket: {connected ? "接続中" : "未接続"}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={handleRefresh} className="rounded bg-neutral-800 px-3 py-2 text-white">
+            デバイス探索
+          </button>
+
+          <select
+            value={selectedDevice}
+            onChange={(e) => setSelectedDevice(e.target.value)}
+            className="rounded border px-2 py-2"
+          >
+            {CANDIDATE_DEVICES.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+
+          <button onClick={handleSubscribe} className="rounded bg-blue-600 px-3 py-2 text-white">
+            選択デバイスを購読
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border p-4">
+        <div className="mb-2 text-sm opacity-70">
+          録画: {recording ? "録画中..." : "停止中"}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleStart}
+            disabled={recording}
+            className="rounded bg-green-600 px-3 py-2 text-white disabled:opacity-50"
+          >
+            画面キャプチャ開始
+          </button>
+          <button
+            onClick={handleStop}
+            disabled={!recording}
+            className="rounded bg-red-600 px-3 py-2 text-white disabled:opacity-50"
+          >
+            停止 & 保存（動画+HR JSON）
+          </button>
+          <button
+            onClick={handlePreview}
+            disabled={chunks.length === 0}
+            className="rounded bg-neutral-700 px-3 py-2 text-white disabled:opacity-50"
+          >
+            簡易プレビュー
+          </button>
+        </div>
+
+        <div className="mt-3 text-sm">
+          最新心拍: <span className="font-semibold">{latest ?? "--"} bpm</span>（購読開始後に更新）
+        </div>
+
+        <video ref={videoRef} className="mt-3 w-full rounded-lg" controls />
+      </div>
+
+      <div className="mb-4 rounded-xl border p-4">
+        <div className="mb-2 text-sm font-medium">ログ</div>
+        <ul className="space-y-1 text-sm">
+          {log.map((line, i) => (
+            <li key={i} className="font-mono opacity-80">• {line}</li>
+          ))}
+        </ul>
+      </div>
+
+      <HeartOverlay latest={latest} />
+    </main>
   );
 }
