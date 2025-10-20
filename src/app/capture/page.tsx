@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { HeartOverlay } from "@/components/HeartOverlay";
 import { useHeartRateStream } from "@/hooks/useHeartRateStream";
 import { useScreenCapture } from "@/hooks/useScreenCapture";
 import { useScreenRecording } from "@/hooks/useScreenRecording";
-import { HeartOverlay } from "@/components/HeartOverlay";
 import { downloadJson, syncHeartRates } from "@/lib/sync";
 import {
-  Play,
-  Square,
-  Pause,
-  RefreshCcw,
-  PlugZap,
-  MonitorUp,
-  Film,
   Activity,
+  Film,
+  MonitorUp,
+  Pause,
+  Play,
+  PlugZap,
+  RefreshCcw,
+  Square,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 const CANDIDATE_DEVICES = ["Polar Verity Sense"];
 
@@ -46,6 +46,7 @@ export default function Page() {
   const [log, setLog] = useState<string[]>([]);
   const previewRef = useRef<HTMLVideoElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
 
   // stream を video に結線
   useEffect(() => {
@@ -81,8 +82,10 @@ export default function Page() {
         return;
       }
 
-      handleStartRecording();
-      setLog((l) => ["画面共有 + 録画を同時に開始しました", ...l]);
+  handleStartRecording();
+  // 録画開始時のタイムスタンプ（performance.now ベース）を記録
+  setRecordingStartedAt(performance.now());
+  setLog((l) => ["画面共有 + 録画を同時に開始しました", ...l]);
 
       const [vtrack] = streamRef.current.getVideoTracks();
       vtrack?.addEventListener(
@@ -103,12 +106,15 @@ export default function Page() {
       const res = await handleStopRecording();
       setLog((l) => ["録画を停止しました", ...l]);
 
-      // HR 同期（簡易同期）
+      // HR 同期（録画開始からの再生時間で同期）
       const hrEvents = drain();
-      const startedAt = hrEvents.length ? new Date(hrEvents[0].timestamp) : new Date();
-      const synced = syncHeartRates(startedAt, hrEvents);
+      // use recordingStartedAt (performance.now) as t0; fallback to first event ts or performance.now
+      const t0 = recordingStartedAt ?? (hrEvents.length ? hrEvents[0].ts : performance.now());
+      const synced = syncHeartRates(t0, hrEvents);
+      // convert t0 (performance.now relative to now) to a Date for ISO
+      const startedAtDate = new Date(Date.now() - (performance.now() - t0));
       downloadJson(
-        { device: selectedDevice, startedAt: startedAt.toISOString(), hr: synced },
+        { device: selectedDevice, startedAt: startedAtDate.toISOString(), hr: synced },
         `hr_${new Date().toISOString().replace(/[:.]/g, "-")}.json`
       );
 
@@ -116,9 +122,10 @@ export default function Page() {
       await handleDownloadRecording();
       setLog((l) => ["動画とHR JSONを保存しました", ...l]);
 
-      if (res?.url) {
+      const resAny = res as unknown as { url?: string } | undefined;
+      if (resAny && resAny.url) {
         if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(res.url);
+        setPreviewUrl(resAny.url);
       }
     } catch (e) {
       setLog((l) => [`停止時エラー: ${String((e as Error).message ?? e)}`, ...l]);
