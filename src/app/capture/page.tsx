@@ -1,10 +1,12 @@
 "use client";
 
 import { HeartOverlay } from "@/components/HeartOverlay";
+import { RecordingCompleteModal } from "@/components/RecordingCompleteModal";
 import { useHeartRateStream } from "@/hooks/useHeartRateStream";
 import { useScreenCapture } from "@/hooks/useScreenCapture";
 import { useScreenRecording } from "@/hooks/useScreenRecording";
 import { downloadJson, syncHeartRates } from "@/lib/sync";
+import { ConversionProgress } from "@/utils/recording/convertToMp4";
 import {
   Activity,
   Film,
@@ -35,11 +37,14 @@ export default function Page() {
   const {
     isStop,
     recording,
+    showDownloadModal,
     handleStartRecording,
     handleStopRecording,
     handlePauseRecording,
     handleResumeRecording,
-    handleDownloadRecording,
+    handleDownloadAsMP4,
+    handleDownloadAsWebM,
+    handleCloseDownloadModal,
   } = useScreenRecording(streamRef);
 
   const [selectedDevice, setSelectedDevice] = useState(CANDIDATE_DEVICES[0]);
@@ -118,9 +123,10 @@ export default function Page() {
         `hr_${new Date().toISOString().replace(/[:.]/g, "-")}.json`
       );
 
-      // 動画DL
-      await handleDownloadRecording();
-      setLog((l) => ["動画とHR JSONを保存しました", ...l]);
+      setLog((l) => ["HR JSONを保存しました", ...l]);
+
+      // モーダルが表示されるので、動画ダウンロードは後でモーダルから実行
+      // handleStopRecording内でshowDownloadModalがtrueになる
 
       const resAny = res as unknown as { url?: string } | undefined;
       if (resAny && resAny.url) {
@@ -134,6 +140,32 @@ export default function Page() {
         await stopScreenCapture();
         setLog((l) => ["画面キャプチャを停止しました", ...l]);
       }
+    }
+  };
+
+  // モーダルからのMP4ダウンロード処理
+  const handleModalDownloadMP4 = async (
+    onProgress: (progress: ConversionProgress) => void
+  ) => {
+    try {
+      setLog((l) => ["動画をMP4形式に変換中...", ...l]);
+      await handleDownloadAsMP4(onProgress);
+      console.log("MP4ダウンロード完了");
+      setLog((l) => ["MP4ダウンロードが完了しました", ...l]);
+    } catch (e) {
+      setLog((l) => [`ダウンロードエラー: ${String((e as Error).message ?? e)}`, ...l]);
+      throw e;
+    }
+  };
+
+  // モーダルからのWebMダウンロード処理
+  const handleModalDownloadWebM = () => {
+    try {
+      handleDownloadAsWebM();
+      setLog((l) => ["WebMダウンロードが完了しました", ...l]);
+    } catch (e) {
+      setLog((l) => [`ダウンロードエラー: ${String((e as Error).message ?? e)}`, ...l]);
+      throw e;
     }
   };
 
@@ -303,6 +335,13 @@ export default function Page() {
       </div>
 
       <HeartOverlay latest={latest} />
+
+      <RecordingCompleteModal
+        open={showDownloadModal}
+        onDownloadMP4={handleModalDownloadMP4}
+        onDownloadWebM={handleModalDownloadWebM}
+        onClose={handleCloseDownloadModal}
+      />
     </main>
   );
 }

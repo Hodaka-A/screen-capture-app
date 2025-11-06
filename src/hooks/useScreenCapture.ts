@@ -1,7 +1,7 @@
 "use client";
 
-import { startCapture } from "@/utlils/capture/startCapture";
-import { stopCapture } from "@/utlils/capture/stopCapture";
+import { startCapture } from "@/utils/capture/startCapture";
+import { stopCapture } from "@/utils/capture/stopCapture";
 import { useRef, useState } from "react";
 
 export const useScreenCapture = () => {

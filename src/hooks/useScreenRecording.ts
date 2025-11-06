@@ -1,10 +1,14 @@
 "use client";
 
-import { download } from "@/utlils/recording/download";
-import { pauseRecording } from "@/utlils/recording/pauseRecording";
-import { restartRecording } from "@/utlils/recording/restartRecording";
-import { startRecording } from "@/utlils/recording/startRecording";
-import { stopRecording } from "@/utlils/recording/stopRecording";
+import {
+  downloadAsMP4,
+  downloadAsWebM,
+} from "@/utils/recording/download";
+import { ConversionProgress } from "@/utils/recording/convertToMp4";
+import { pauseRecording } from "@/utils/recording/pauseRecording";
+import { restartRecording } from "@/utils/recording/restartRecording";
+import { startRecording } from "@/utils/recording/startRecording";
+import { stopRecording } from "@/utils/recording/stopRecording";
 import { RefObject, useRef, useState } from "react";
 
 /**
@@ -12,11 +16,14 @@ import { RefObject, useRef, useState } from "react";
  * @param stream  録画するMediaStream
  * @returns 録画の状態と操作関数
  */
-export const useScreenRecording = (streamRef: RefObject<MediaStream | null>) => {
+export const useScreenRecording = (
+  streamRef: RefObject<MediaStream | null>
+) => {
   // 動画を一時停止しているかどうかの状態
-  
-const [recording, setRecording] = useState(false);
+
+  const [recording, setRecording] = useState(false);
   const [isStop, setIsStop] = useState<boolean>(false);
+  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
 
   // 再レンダーで消えないように ref 化
   const chunksRef = useRef<Blob[]>([]);
@@ -32,13 +39,18 @@ const [recording, setRecording] = useState(false);
 
   // 録画開始のロジック
   const handleStartRecording = () => {
-    const stream=streamRef.current;
+    const stream = streamRef.current;
     if (!stream) {
       console.error(
         "MediaStream がありません。getDisplayMedia で取得してください。"
       );
       return;
     }
+
+    // 前回の録画データをクリア
+    chunksRef.current = [];
+    console.log("[handleStartRecording] 録画データをクリア");
+
     if (!recorderRef.current) {
       try {
         recorderRef.current = new MediaRecorder(stream, options);
@@ -52,10 +64,11 @@ const [recording, setRecording] = useState(false);
     setIsStop(false);
     setRecording(true);
 
-     recorderRef.current.onstop = () => {
+    recorderRef.current.onstop = () => {
+      console.log("[onstop] 録画が停止されました");
       stream.getTracks().forEach((t) => t.stop());
-       recorderRef.current = null;
-        setRecording(false);
+      // recorderRefはダウンロード後にクリアする
+      setRecording(false);
     };
   };
 
@@ -64,6 +77,8 @@ const [recording, setRecording] = useState(false);
     if (!recorderRef.current) return;
     stopRecording(recorderRef.current);
     setRecording(false);
+    // 録画停止後にダウンロードモーダルを表示
+    setShowDownloadModal(true);
   };
 
   //   録画一時停止のロジック
@@ -85,20 +100,46 @@ const [recording, setRecording] = useState(false);
   // 録画保存のロジック
   const handleSaveRecording = () => {};
 
-  // 録画データのダウンロード
-  const handleDownloadRecording = () => {
-    if (!recorderRef.current) return;
-    download(recorderRef.current, chunksRef.current);
+  // 録画データをMP4形式でダウンロード
+  const handleDownloadAsMP4 = async (
+    onProgress: (progress: ConversionProgress) => void
+  ) => {
+    console.log(`[handleDownloadAsMP4] chunks数: ${chunksRef.current.length}`);
+    if (chunksRef.current.length === 0) {
+      throw new Error("録画データがありません");
+    }
+    await downloadAsMP4(chunksRef.current, mimeType, onProgress);
+  };
+
+  // 録画データをWebM形式でダウンロード
+  const handleDownloadAsWebM = () => {
+    console.log(`[handleDownloadAsWebM] chunks数: ${chunksRef.current.length}`);
+    if (chunksRef.current.length === 0) {
+      throw new Error("録画データがありません");
+    }
+    downloadAsWebM(chunksRef.current, mimeType);
+  };
+
+  // ダウンロードモーダルを閉じる
+  const handleCloseDownloadModal = () => {
+    setShowDownloadModal(false);
+    // 録画データとrecorderをクリア
+    chunksRef.current = [];
+    recorderRef.current = null;
+    console.log("[handleCloseDownloadModal] 録画データをクリアしました");
   };
 
   return {
     isStop,
     recording,
+    showDownloadModal,
     handleStartRecording,
     handleStopRecording,
     handlePauseRecording,
     handleResumeRecording,
     handleSaveRecording,
-    handleDownloadRecording,
+    handleDownloadAsMP4,
+    handleDownloadAsWebM,
+    handleCloseDownloadModal,
   };
 };

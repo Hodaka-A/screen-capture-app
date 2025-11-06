@@ -11,7 +11,7 @@ export function useScreenRecorder() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const start = useCallback(async (fps = 30) => {
-    const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+    const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: fps },
       audio: true, // 必要に応じて
     });
