@@ -84,7 +84,7 @@ export const convertWebMToMP4 = async (
   // WebM BlobをFFmpegのファイルシステムに書き込む
   await ffmpegInstance.writeFile(inputFileName, await fetchFile(webmBlob));
 
-  // WebMからMP4に変換（ultrafastプリセットで高速化）
+  // WebMからMP4に変換（最高速設定）
   await ffmpegInstance.exec([
     "-i",
     inputFileName,
@@ -92,14 +92,27 @@ export const convertWebMToMP4 = async (
     "libx264",
     "-preset",
     "ultrafast",
+    "-tune",
+    "zerolatency",
     "-crf",
-    "28",
+    "32", // 画質を下げて速度アップ（28→32）
+    "-maxrate",
+    "2M", // ビットレート制限
+    "-bufsize",
+    "4M",
+    "-r",
+    "30", // フレームレート制限
+    "-g",
+    "60", // キーフレーム間隔
+    "-threads",
+    "0", // 自動的に最適なスレッド数を使用
     "-c:a",
     "aac",
     "-b:a",
-    "128k",
+    "96k", // オーディオビットレートを下げる（128k→96k）
     "-movflags",
     "+faststart",
+    "-y", // 上書き確認なし
     outputFileName,
   ]);
 

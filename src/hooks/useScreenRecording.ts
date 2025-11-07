@@ -32,8 +32,8 @@ export const useScreenRecording = (
   const mimeType = "video/webm;codecs=vp9,opus";
 
   const options: MediaRecorderOptions = {
-    audioBitsPerSecond: 128000,
-    videoBitsPerSecond: 2500000,
+    audioBitsPerSecond: 96000, // 128000 → 96000 (音質を少し下げて軽量化)
+    videoBitsPerSecond: 2000000, // 2500000 → 2000000 (2Mbps、変換が速くなる)
     mimeType: mimeType,
   };
 
